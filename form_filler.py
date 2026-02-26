@@ -2,13 +2,20 @@ import asyncio
 import os
 import json
 from langchain_google_genai import ChatGoogleGenerativeAI
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from browser_use import Agent, Controller
 from typing import List, Optional
 
 # Browser-use requires a 'provider' attribute on the LLM which ChatGoogleGenerativeAI lacks
+# It also aggressively monkey-patches tracking methods onto the Pydantic object
 class CustomChatGoogle(ChatGoogleGenerativeAI):
+    model_config = ConfigDict(extra="allow")
     provider: str = Field(default="google")
+    model_name: str = Field(default="gemini")
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.model_name = getattr(self, "model", "gemini")
 
 # Define the structured output we want the Agent to extract
 class FormOption(BaseModel):
