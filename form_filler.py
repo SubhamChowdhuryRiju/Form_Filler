@@ -2,9 +2,13 @@ import asyncio
 import os
 import json
 from langchain_google_genai import ChatGoogleGenerativeAI
+from pydantic import BaseModel, Field
 from browser_use import Agent, Controller
-from pydantic import BaseModel
 from typing import List, Optional
+
+# Browser-use requires a 'provider' attribute on the LLM which ChatGoogleGenerativeAI lacks
+class CustomChatGoogle(ChatGoogleGenerativeAI):
+    provider: str = Field(default="google")
 
 # Define the structured output we want the Agent to extract
 class FormOption(BaseModel):
@@ -31,7 +35,7 @@ async def scan_and_fill(url):
     
     # Initialize the LLM
     model_name = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
-    llm = ChatGoogleGenerativeAI(model=model_name, temperature=0.0)
+    llm = CustomChatGoogle(model=model_name, temperature=0.0)
 
     # Note: We use gpt-4o because form understanding requires strong reasoning
     
