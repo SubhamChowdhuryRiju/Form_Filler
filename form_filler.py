@@ -46,61 +46,41 @@ async def scan_and_fill(url):
 
     # Note: We use gpt-4o because form understanding requires strong reasoning
     
+    # Initialize Controller for extraction
+    controller = Controller()
+
+    # Parameter holding the parsed schema
+    extracted_data: Optional[FormSchema] = None
+
+    @controller.action("Save extracted form schema", param_model=FormSchema)
+    def save_form_schema(schema: FormSchema):
+        nonlocal extracted_data
+        extracted_data = schema
+        return "Successfully saved form schema! You should now stop."
+
     scan_task = f"""
     Go to the URL {url}.
     Find all the input fields, questions, checkboxes, dropdowns, and text areas in this form.
     Ignore standard navigation links or generic page text. Focus only on things the user needs to fill out or click to submit a form.
     
-    Return a comprehensive JSON list of all these fields exactly matching the requested Pydantic schema.
+    Once you have identified all the fields, use the 'Save extracted form schema' action to save the data.
     For radio buttons, checkboxes, or dropdowns, make sure to extract all the available 'options' the user can choose from.
     """
 
     scan_agent = Agent(
         task=scan_task,
         llm=llm,
-        generate_responses=True, # Allow structured output extraction
+        controller=controller,
     )
 
     print("Agent is actively scanning the page (this may take 15-30 seconds depending on the form complexity)...")
     history = await scan_agent.run()
     
-    # The last action result should contain our extracted data if asked nicely, or we can parse the final text.
-    # To reliably get structured data out of browser-use, we should extract the final string and parse JSON.
-    final_result_text = history.final_result()
-    
-    if not final_result_text:
-        print("Failed to extract form data. The agent did not return a result.")
+    if not extracted_data or not extracted_data.fields:
+        print("Failed to extract form data or no fields found. The agent did not return a valid schema.")
         return
 
-    print("\\n--- Agent Finished Scanning ---")
-    
-    # Fallback to a secondary LLM call to strictly parse the text into our JSON schema 
-    # since browser-use final_result is just a string summary.
-    parse_task_prompt = f"""
-    Extract the form fields from this raw text and output strictly valid JSON matching the following schema:
-    [
-      {{ "label": "string", "type": "string", "options": ["string", "string"], "required": boolean }}
-    ]
-    Raw text:
-    {final_result_text}
-    """
-    
-    # We use a direct LLM call to guarantee JSON format
-    from langchain_core.messages import HumanMessage
-    msg = HumanMessage(content=parse_task_prompt)
-    structured_llm = llm.with_structured_output(FormSchema)
-    
-    try:
-        schema_obj = structured_llm.invoke([msg])
-        fields = schema_obj.fields
-    except Exception as e:
-        print(f"Failed to parse the fields: {e}")
-        print(f"Raw output was: {final_result_text}")
-        return
-
-    if not fields:
-        print("No visible form fields found on this page.")
-        return
+    fields = extracted_data.fields
         
     print(f"\\nFound {len(fields)} fields.\\n")
     
